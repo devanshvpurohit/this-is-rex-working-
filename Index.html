@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LaunchPad Application</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #000;
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px;
+      flex-direction: column;
+    }
+
+    h2 {
+      color: #ff9900;
+      margin-bottom: 20px;
+    }
+
+    form {
+      background: #1a1a1a;
+      padding: 25px 30px;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(255, 153, 0, 0.3);
+      max-width: 400px;
+      width: 100%;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border-radius: 6px;
+      border: 1px solid #ff9900;
+      font-size: 15px;
+      background-color: #000;
+      color: #fff;
+    }
+
+    input::placeholder {
+      color: #ccc;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background-color: #ff9900;
+      color: white;
+      border: none;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background-color: #e68a00;
+    }
+
+    #message {
+      margin-top: 20px;
+      font-weight: 500;
+      color: #ff9900;
+      text-align: center;
+    }
+
+    #qrcanvas {
+      margin-top: 20px;
+      border: 2px solid #ff9900;
+      padding: 10px;
+      background: #fff;
+      border-radius: 10px;
+      display: none;
+    }
+
+    #seatGrid {
+      display: flex;
+      flex-direction: column;
+      margin: 30px 0;
+      gap: 5px;
+    }
+
+    .seat {
+      width: 30px;
+      height: 30px;
+      background: #333;
+      border: 1px solid #ff9900;
+      margin: 2px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 10px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .seat:hover,
+    .seat.selected {
+      background: #ff9900;
+      color: #000;
+      font-weight: bold;
+    }
+
+    #seatGrid div {
+      display: flex;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>ticket booking  Application</h2>
+
+  <form id="regForm">
+    <input type="text" id="name" placeholder="Full Name" required />
+    <input type="text" id="roll" placeholder="College Roll Number" required />
+    <input type="email" id="email" placeholder="Email Address" required />
+    <button type="submit">Apply to book</button>
+  </form>
+
+  <div id="seatGrid"></div>
+
+  <canvas id="qrcanvas"></canvas>
+  <div id="message"></div>
+
+  <script>
+    emailjs.init("oQesVLGv8IcrnyBZI");
+
+    const BASEROW_TOKEN = "beSz1ZWotwcbWpHFC5qyKlABSVpsVxcQ";
+    const TABLE_API_URL = "https://api.baserow.io/api/database/rows/table/498245/?user_field_names=true";
+
+    // Generate 20x10 Seat Grid with Labels A1-J20
+    const seatGrid = document.getElementById("seatGrid");
+    const letters = "ABCDEFGHIJ";
+
+    for (let row = 0; row < 10; row++) {
+      const rowDiv = document.createElement("div");
+      for (let col = 0; col < 20; col++) {
+        const seat = document.createElement("div");
+        const label = `${letters[row]}${col + 1}`;
+        seat.className = "seat";
+        seat.dataset.label = label;
+        seat.textContent = label;
+        seat.addEventListener("click", () => {
+          seat.classList.toggle("selected");
+        });
+        rowDiv.appendChild(seat);
+      }
+      seatGrid.appendChild(rowDiv);
+    }
+
+    // Handle Form Submission
+    document.getElementById("regForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+
+      const name = document.getElementById("name").value.trim();
+      const roll = document.getElementById("roll").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const canvas = document.getElementById("qrcanvas");
+      const msg = document.getElementById("message");
+
+      msg.textContent = "⏳ Checking for existing application...";
+      canvas.style.display = "none";
+
+      try {
+        const res = await fetch(TABLE_API_URL, {
+          headers: {
+            Authorization: `Token ${BASEROW_TOKEN}`
+          }
+        });
+        const data = await res.json();
+
+        const duplicate = data.results.find(row =>
+          row.Roll?.toLowerCase() === roll.toLowerCase() ||
+          row.Email?.toLowerCase() === email.toLowerCase()
+        );
+
+        if (duplicate) {
+          msg.textContent = "⚠️ You have already applied to LaunchPad.";
+          return;
+        }
+
+        const selectedSeats = [...document.querySelectorAll(".seat.selected")]
+          .map(seat => seat.dataset.label)
+          .join(", ");
+
+        const qrData = `LaunchPad Application\nName: ${name}\nRoll: ${roll}\nEmail: ${email}\nSeats: ${selectedSeats}`;
+        await QRCode.toCanvas(canvas, qrData);
+        const qrBase64 = canvas.toDataURL("image/png");
+        canvas.style.display = "block";
+
+        const saveRes = await fetch(TABLE_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Token ${BASEROW_TOKEN}`
+          },
+          body: JSON.stringify({
+            Name: name,
+            Roll: roll,
+            Email: email,
+            Seats: selectedSeats,
+            timestamp: new Date().toISOString()
+          })
+        });
+
+        if (!saveRes.ok) throw new Error("Failed to save to Baserow");
+
+        await emailjs.send("service_3krqsck", "template_5flwr9g", {
+          name: name,
+          email: email,
+          qr_code: qrBase64
+        });
+
+        msg.textContent = "✅ Application successful! Check your email for the QR code.";
+        document.getElementById("regForm").reset();
+        document.querySelectorAll(".seat.selected").forEach(seat => seat.classList.remove("selected"));
+
+      } catch (error) {
+        console.error("Error:", error);
+        msg.textContent = "❌ Something went wrong. Please try again later.";
+      }
+    });
+  </script>
+
+</body>
+</html>
